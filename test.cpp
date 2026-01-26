@@ -43,12 +43,28 @@ class Pickup : public Entity {
 
 class Player : public Entity {
     public:
-        Player(double x, double y) {
+        double angle;
+        Player(double x, double y, double a) {
             X = x;
             Y = y;
+            angle = a;
         }
-        void Move(double xa, double ya, Map* map) {
-            if (map->isWall(std::floor(X+xa), std::floor(Y+ya))) {
+        void Rotate(double da) {
+            angle += da;
+            if (angle < 0) {
+                angle += 2.0 * M_PI;
+            }
+            if (angle >= 2.0 * M_PI) {
+                angle -= 2.0 * M_PI;
+            }
+        }
+
+        void Move(double step, Map* map) {
+            double xa = std::cos(angle) * step;
+            double ya = std::sin(angle) * step;
+            int xs = std::floor(X + xa);
+            int ys = std::floor(Y + ya);
+            if (map->isWall(xs, ys)) {
                 return;
             } else {
                 X += xa;
@@ -75,7 +91,7 @@ int main() {
     };
 
     Map map(20, 10);
-    Player player(3.5, 4.8);
+    Player player(3.5, 4.8, 0);
 
     for (int y = 0; y < map.height; y++) {
         for (int x = 0; x < map.width; x++) {
@@ -84,6 +100,7 @@ int main() {
         }
     }
     const double step = 0.5;
+    const double turnRad = 0.1;
     for (;;) {
         drawTopDownMap(map, player);
         std::cout.flush();
@@ -93,16 +110,16 @@ int main() {
             case 'q':
                 return 0;
             case 'w':
-                player.Move(0, -step, &map);            
+                player.Move(step, &map);            
                 break;
             case 's':
-                player.Move(0, step, &map);            
+                player.Move(-step, &map);            
                 break;
             case 'd':
-                player.Move(step, 0, &map);            
+                player.Rotate(turnRad);            
                 break;
             case 'a':
-                player.Move(-step, 0, &map);            
+                player.Rotate(-turnRad);            
                 break;
             default:
                 break;

@@ -85,8 +85,8 @@ int main() {
     }
     const double step = 0.5;
     for (;;) {
-        clearScreen();
         drawTopDownMap(map, player);
+        std::cout.flush();
         char c;
         std::cin >> c;
         switch (c) {
@@ -107,6 +107,8 @@ int main() {
             default:
                 break;
             }
+        clearScreen();
+        std::cout.flush();
     }
     return 0;
 }

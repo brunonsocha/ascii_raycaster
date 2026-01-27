@@ -7,6 +7,11 @@ enum Tile {
     Empty
 };
 
+struct Cell {
+    int x;
+    int y;
+};
+
 class Map {
     public:
         int width;
@@ -44,6 +49,7 @@ class Pickup : public Entity {
 class Player : public Entity {
     public:
         double angle;
+        double fov = M_PI/3;
         Player(double x, double y, double a) {
             X = x;
             Y = y;
@@ -73,8 +79,24 @@ class Player : public Entity {
         }
 };
 
+class Ray {
+    public:
+        double originX;
+        double originY;
+        double directionX;
+        double directionY;
+        Ray(Player &player) {
+            originX = player.getXPos();
+            originY = player.getYPos();
+            directionX = std::cos(player.angle);
+            directionY = std::sin(player.angle);
+        }
+};
+
 void clearScreen();
-void drawTopDownMap(Map &map, Player &player);
+void drawTopDownMap(Map &map, Player &player, const std::vector<Cell> &rayCells);
+std::vector<Cell> steppingDDA(Ray &ray, Map &map, int maxSteps = 1024);
+bool isVisited(const std::vector<Cell> &cells, int x, int y);
 
 int main() {
     const char* layout[] = {
@@ -102,7 +124,10 @@ int main() {
     const double step = 0.5;
     const double turnRad = 0.1;
     for (;;) {
-        drawTopDownMap(map, player);
+        clearScreen();
+        Ray ray(player);
+        std::vector<Cell> rayCells = steppingDDA(ray, map, 1024);
+        drawTopDownMap(map, player, rayCells);
         std::cout.flush();
         char c;
         std::cin >> c;
@@ -124,13 +149,12 @@ int main() {
             default:
                 break;
             }
-        clearScreen();
         std::cout.flush();
     }
     return 0;
 }
 
-void drawTopDownMap(Map &map, Player &player) {
+void drawTopDownMap(Map &map, Player &player, const std::vector<Cell> &rayCells) {
     int pX = std::floor(player.getXPos());
     int pY = std::floor(player.getYPos());
     for (int i = 0; i < map.height; i++) {
@@ -138,13 +162,14 @@ void drawTopDownMap(Map &map, Player &player) {
             if (pX == j && pY == i) {
                 std::cout << "P";
             } 
+            else if (map.isWall(j, i)) {
+                std::cout << "#";
+            }
+            else if (isVisited(rayCells, j, i)) {
+                std::cout << "*";
+            }
             else {
-                if (map.isWall(j, i)) {
-                    std::cout << "#";
-                } 
-                else {
-                    std::cout << ".";
-                }
+                std::cout << ".";
             }
         }
         std::cout << "\n";
@@ -153,4 +178,56 @@ void drawTopDownMap(Map &map, Player &player) {
 
 void clearScreen() {
     std::cout << "\x1B[2J\x1B[H";
+}
+
+std::vector<Cell> steppingDDA(Ray &ray, Map &map, int maxSteps) {
+    std::vector<Cell> visited;
+    int mapX = floor(ray.originX);
+    int mapY = floor(ray.originY);
+    int stepX = (ray.directionX < 0) ? -1 : 1;
+    int stepY = (ray.directionY < 0) ? -1 : 1;
+    const double INF = 1e30;
+    double deltaDistX = (ray.directionX == 0.0) ? INF : std::abs(1.0/ray.directionX);
+    double deltaDistY = (ray.directionY == 0.0) ? INF : std::abs(1.0/ray.directionY);
+    double sideDistX;
+    double sideDistY;
+
+    if (ray.directionX < 0) {
+        sideDistX = (ray.originX - mapX) * deltaDistX;
+    }
+    else {
+        sideDistX = (mapX + 1.0 - ray.originX) * deltaDistX;
+    }
+
+    if (ray.directionY < 0) {
+        sideDistY = (ray.originY - mapY) * deltaDistY;
+    }
+    else {
+        sideDistY = (mapY + 1.0 - ray.originY) * deltaDistY;
+    }
+
+    for (int i = 0; i < maxSteps; i++) {
+        if (sideDistX < sideDistY) {
+            sideDistX += deltaDistX;
+            mapX += stepX;
+        } 
+        else {
+            sideDistY += deltaDistY;
+            mapY += stepY;
+        }
+        visited.push_back({mapX, mapY});
+        if (map.isWall(mapX, mapY)) {
+            break;
+        }
+    }
+    return visited;
+}
+
+bool isVisited(const std::vector<Cell> &cells, int x, int y) {
+    for (const auto &c : cells) {
+        if (c.x == x && c.y == y) {
+            return true;
+        }
+    }
+    return false;
 }

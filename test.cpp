@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <thread>
 
 enum Tile {
@@ -48,10 +49,6 @@ class Entity {
         }
 };
 
-class Pickup : public Entity {
-    private:
-        int points;
-};
 
 class Player : public Entity {
     public:
@@ -107,6 +104,22 @@ struct Hit {
     int mapY;
 };
 
+struct Pixel {
+    char symbol;
+    std::string color;
+};
+
+static const char* RESET = "\x1b[0m";
+static const char* WALL_COL = "\x1b[38;5;137m";
+static const char* FLOOR_COL = "\x1b[38;5;24m";
+static const char* CEIL_COL = "\x1b[38;5;250m";
+
+enum PixType : uint8_t {
+    PT_CEIL=0,
+    PT_FLOOR=1, 
+    PT_WALL=2 
+};
+
 void clearScreen();
 void drawTopDownMap(Map &map, Player &player, const std::vector<Cell> &rayCells);
 Hit steppingDDA(Ray &ray, Map &map, int maxSteps = 1024);
@@ -146,6 +159,9 @@ int readKey() {
 
 int main() {
     enableRawMode();
+    std::cout << "\x1B[?25l"; 
+    std::cout << "\x1B[2J"; 
+    std::cout.flush();
     const char* layout[] = {
         "####################",
         "#........#.........#",
@@ -172,19 +188,23 @@ int main() {
     const double turnRad = 0.05;
     const int screenW = 120;
     const int screenH = 40;
+    std::vector<uint8_t> ptype(screenW * screenH, PT_CEIL);
     std::string frame(screenW * screenH, ' ');
     for (;;) {
         std::fill(frame.begin(), frame.end(), ' ');
-        
+        std::fill(ptype.begin(), ptype.end(), PT_CEIL); 
         for (int y = 0; y < screenH; y++) {
             for (int x = 0; x < screenW; x++) {
+                int i = y * screenW + x;
                 if (y < screenH / 2) {
-                    frame[y * screenW + x] = ' ';
+                    frame[i] = ' ';
+                    ptype[i] = PT_CEIL;
                 }
                 else {
                     double floorDist = (double)screenH / (2.0 * y - screenH);
                     int fIdx = rampIndexFromDistance(floorDist, MAX_DEPTH);
-                    frame[y * screenW + x] = (fIdx < RAMP_LEN - 3) ? '.' : ' '; 
+                    frame[i] = (fIdx < RAMP_LEN - 3) ? '.' : ' '; 
+                    ptype[i] = (frame[i] == '.') ? PT_FLOOR : PT_CEIL;
                 }
             }
         }
@@ -231,13 +251,34 @@ int main() {
             char wall2 = rampChar(idx2);
 
             for (int y = drawStart; y <= drawEnd; y++) {
-                frame[y * screenW + x] = wall1; 
+                int i = y * screenW + x;
+                frame[i] = wall1; 
+                ptype[i] = PT_WALL;
             }
         }
         clearScreen();
         for (int y = 0; y < screenH; y++) {
-            std::cout.write(&frame[y * screenW], screenW);
-            std::cout << '\n';
+            uint8_t cur = 255;
+            for (int x = 0; x < screenW; x++) {
+                int i = y * screenW + x;
+                uint8_t t = ptype[i];
+
+                if (t != cur) {
+                    cur = t;
+                    if (t == PT_WALL) {
+                        std::cout << WALL_COL;
+                    }
+                    else if (t == PT_FLOOR) {
+                        std::cout << FLOOR_COL;
+                    }
+                    else {
+                        std::cout << CEIL_COL;
+                    }
+                }
+
+                std::cout << frame[i];
+            }
+            std::cout << RESET << '\n';
         }
         std::cout.flush();
         int key;
@@ -265,6 +306,8 @@ int main() {
         std::cout.flush();
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
+    std::cout << "\x1B[?25h";
+
     disableRawMode();
     return 0;
 }
@@ -308,7 +351,7 @@ void drawTopDownMap(Map &map, Player &player, const std::vector<Cell> &rayCells)
 }
 
 void clearScreen() {
-    std::cout << "\x1B[2J\x1B[H";
+    std::cout << "\x1B[H";
 }
 
 

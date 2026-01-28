@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <iostream>
@@ -93,10 +94,18 @@ class Ray {
         }
 };
 
+struct Hit {
+    double perpDist;
+    int side;
+    int mapX;
+    int mapY;
+};
+
 void clearScreen();
 void drawTopDownMap(Map &map, Player &player, const std::vector<Cell> &rayCells);
-std::vector<Cell> steppingDDA(Ray &ray, Map &map, int maxSteps = 1024);
+Hit steppingDDA(Ray &ray, Map &map, int maxSteps = 1024);
 bool isVisited(const std::vector<Cell> &cells, int x, int y);
+std::vector<Cell> steppingDDApath(Ray &ray, Map &map, int maxSteps);
 
 int main() {
     const char* layout[] = {
@@ -123,11 +132,37 @@ int main() {
     }
     const double step = 0.5;
     const double turnRad = 0.1;
+    const int screenW = 120;
+    const int screenH = 40;
+    std::string frame(screenW * screenH, ' ');
     for (;;) {
+        std::fill(frame.begin(), frame.end(), ' ');
+        for (int x = 0; x < screenW; x++) {
+            double cameraX = 2.0 * x / double(screenW) - 1.0;
+            double rayAngle = player.angle + std::atan(cameraX * std::tan(player.fov / 2.0));
+            Ray ray(player);
+            ray.directionX = std::cos(rayAngle);
+            ray.directionY = std::sin(rayAngle);
+            Hit h = steppingDDA(ray, map, 1024);
+            int lineH = int(screenH / h.perpDist);
+            int drawStart = -lineH / 2 + screenH / 2;
+            int drawEnd = lineH / 2 + screenH / 2;
+            if (drawStart < 0) {
+                drawStart = 0;
+            }
+            if (drawEnd >= screenH) {
+                drawEnd = screenH - 1;
+            }
+            char wall = (h.side == 0) ? '#' : '|';
+            for (int y = drawStart; y <= drawEnd; y++) {
+                frame[y * screenW + x] = wall;
+            }
+        }
         clearScreen();
-        Ray ray(player);
-        std::vector<Cell> rayCells = steppingDDA(ray, map, 1024);
-        drawTopDownMap(map, player, rayCells);
+        for (int y = 0; y < screenH; y++) {
+            std::cout.write(&frame[y * screenW], screenW);
+            std::cout << '\n';
+        }
         std::cout.flush();
         char c;
         std::cin >> c;
@@ -180,7 +215,57 @@ void clearScreen() {
     std::cout << "\x1B[2J\x1B[H";
 }
 
-std::vector<Cell> steppingDDA(Ray &ray, Map &map, int maxSteps) {
+Hit steppingDDA(Ray &ray, Map &map, int maxSteps) {
+    int mapX = floor(ray.originX);
+    int mapY = floor(ray.originY);
+    int stepX = (ray.directionX < 0) ? -1 : 1;
+    int stepY = (ray.directionY < 0) ? -1 : 1;
+    const double INF = 1e30;
+    double deltaDistX = (ray.directionX == 0.0) ? INF : std::abs(1.0/ray.directionX);
+    double deltaDistY = (ray.directionY == 0.0) ? INF : std::abs(1.0/ray.directionY);
+    double sideDistX;
+    double sideDistY;
+
+    if (ray.directionX < 0) {
+        sideDistX = (ray.originX - mapX) * deltaDistX;
+    }
+    else {
+        sideDistX = (mapX + 1.0 - ray.originX) * deltaDistX;
+    }
+
+    if (ray.directionY < 0) {
+        sideDistY = (ray.originY - mapY) * deltaDistY;
+    }
+    else {
+        sideDistY = (mapY + 1.0 - ray.originY) * deltaDistY;
+    }
+    int side = 0; 
+
+    for (int i = 0; i < maxSteps; i++) {
+        if (sideDistX < sideDistY) {
+            sideDistX += deltaDistX;
+            mapX += stepX;
+            side = 0;
+        } 
+        else {
+            sideDistY += deltaDistY;
+            mapY += stepY;
+            side = 1;
+        }
+        if (map.isWall(mapX, mapY)) {
+            break;
+        }
+    }
+    double perpDist = (side == 0) ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
+    if (perpDist < 0.001) {
+        perpDist = 0.001;
+    }
+    return Hit{perpDist, side, mapX, mapY};
+}
+
+
+
+std::vector<Cell> steppingDDApath(Ray &ray, Map &map, int maxSteps) {
     std::vector<Cell> visited;
     int mapX = floor(ray.originX);
     int mapY = floor(ray.originY);
@@ -205,20 +290,24 @@ std::vector<Cell> steppingDDA(Ray &ray, Map &map, int maxSteps) {
     else {
         sideDistY = (mapY + 1.0 - ray.originY) * deltaDistY;
     }
+    int side = 0; 
 
     for (int i = 0; i < maxSteps; i++) {
         if (sideDistX < sideDistY) {
             sideDistX += deltaDistX;
             mapX += stepX;
+            side = 0;
         } 
         else {
             sideDistY += deltaDistY;
             mapY += stepY;
+            side = 1;
         }
         visited.push_back({mapX, mapY});
         if (map.isWall(mapX, mapY)) {
             break;
         }
+
     }
     return visited;
 }
